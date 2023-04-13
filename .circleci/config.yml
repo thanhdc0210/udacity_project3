@@ -14,7 +14,6 @@ commands:
             aws s3 rm "s3://udapeople-${CIRCLE_WORKFLOW_ID:0:7}" --recursive
             aws cloudformation delete-stack --stack-name "udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}"
             aws cloudformation delete-stack --stack-name "udapeople-frontend-${CIRCLE_WORKFLOW_ID:0:7}"
-            echo "done cleanup"
 
 #   revert-migrations:
 #     description: Revert the last migration if successfully run in the current workflow.
@@ -165,24 +164,33 @@ jobs:
       - destroy-environment:
           when: on_fail     
 
-  # configure-infrastructure:
-  #   docker:
-  #     # Docker image here that supports Ansible
-  #   steps:
-  #     # Checkout code from git
-  #     # Add ssh keys with fingerprint
-  #     # attach workspace
-  #     - run:
-  #         name: Install dependencies
-  #         command: |
-  #           # Your code here
-  #           exit 1
-  #     - run:
-  #         name: Configure server
-  #         command: |
-  #           # Your code here
-  #           exit 1
-  #     # Here's where you will add some code to rollback on failure      
+  configure-infrastructure:
+    docker:
+      - image: python:3.9.0-alpine
+    steps:
+      - checkout
+      - add_ssh_keys:
+          fingerprints: ["3e:88:4f:e5:61:e5:ea:3f:48:d3:17:72:ab:a6:b4:51"]
+      - attach_workspace:
+          at: .
+      - run:
+          name: Install required dependencies
+          command: |
+            apk add tar unzip curl
+            apk add --no-cache aws-cli
+            aws --version
+      - run:
+          name: Install dependencies
+          command: |
+            apk add --update ansible
+            ansible --version
+      - run:
+          name: Configure server
+          command: |
+            cd ./.circleci/ansible/
+            ansible-playbook -i inventory configure-server.yml
+      - destroy-environment:
+          when: on_fail    
 
   # run-migrations:
   #   docker:
