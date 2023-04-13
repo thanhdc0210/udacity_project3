@@ -216,23 +216,12 @@ jobs:
           command: |
             cd backend
             npm install
-            touch temp
-            npm run migrations > temp
-            cat temp
+            npm run migrations > migrations_dump.txt
       - run:
           name: Send migration results to kvdb.io OR memstash.io
           command: |
-            cd backend
-            ls
-            cat temp
-            if grep -q "No migrations are pending" temp
+            if grep -q "has been executed successfully." ~/backend/migrations_dump.txt
             then
-              echo "stash success status to kvdb.io"
-              echo "https://kvdb.io/Eb5CG56NRT2qDqq2BtwPdo/migration_${CIRCLE_WORKFLOW_ID:0:7}"
-              curl -k -d '1' https://kvdb.io/Eb5CG56NRT2qDqq2BtwPdo/migration_${CIRCLE_WORKFLOW_ID:0:7}
-            else
-              echo "stash fail status to kvdb.io"
-              echo "https://kvdb.io/Eb5CG56NRT2qDqq2BtwPdo/migration_${CIRCLE_WORKFLOW_ID:0:7}"
               curl -k -d '0' https://kvdb.io/Eb5CG56NRT2qDqq2BtwPdo/migration_${CIRCLE_WORKFLOW_ID:0:7}
             fi
       - destroy-environment:
