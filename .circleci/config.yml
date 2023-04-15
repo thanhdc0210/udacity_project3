@@ -301,12 +301,6 @@ jobs:
             pip install awscli
             aws --version
       - run:
-          name: Get backend url
-          command: |
-            BACKEND_IP=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" --output text)
-            export API_URL="http://${BACKEND_IP}:3030"
-            echo "${API_URL}"
-      - run:
           name: Backend smoke test.
           command: |
             BACKEND_IP=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" --output text)
@@ -329,9 +323,9 @@ jobs:
             else
               return 1
             fi
-      - destroy-environment
-      - revert-migrations:
-          id: ${CIRCLE_WORKFLOW_ID:0:7}
+      # - destroy-environment
+      # - revert-migrations:
+      #     id: ${CIRCLE_WORKFLOW_ID:0:7}
 
   cloudfront-update:
     docker:
