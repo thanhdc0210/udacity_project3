@@ -2,14 +2,11 @@ version: 2.1
 
 commands:
   destroy-environment:
-    description: Destroy back-end and front-end cloudformation stacks given a workflow ID.
-    parameters:
-      when:
-        type: string 
+    description: Destroy back-end and front-end cloudformation stacks given a workflow ID
     steps:
       - run:
           name: Clear S3 and destroy environment
-          when: << parameters.when >>
+          when: on_fail
           command: |
             aws s3 rm "s3://udapeople-${CIRCLE_WORKFLOW_ID:0:7}" --recursive
             aws cloudformation delete-stack --stack-name "udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}"
@@ -19,8 +16,6 @@ commands:
     description: Revert the last migration if successfully run in the current workflow.
     parameters:
       id:
-        type: string
-      when:
         type: string
     steps:
       - run:
@@ -36,7 +31,7 @@ commands:
               npm install
               npm run migrations:revert
             fi
-          when: << parameters.when >>
+          when: on_fail
             
 jobs:
   build-frontend:
@@ -157,16 +152,14 @@ jobs:
           name: Add back-end ip to ansible inventory
           command: |
             aws ec2 describe-instances \
-              --query 'Reservations[*].Instances[*].PublicIpAddress' \
-              --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" \
-              --output text >> .circleci/ansible/inventory
-            cat .circleci/ansible/inventory
+            --query 'Reservations[*].Instances[*].PublicIpAddress' \
+            --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" \
+            --output text >> .circleci/ansible/inventory.txt
       - persist_to_workspace:
-          root: .
+          root: .circleci/ansible/
           paths:
-            - .circleci/ansible/inventory
-      - destroy-environment:
-          when: on_fail     
+            - inventory.txt
+      - destroy-environment  
 
   configure-infrastructure:
     docker:
@@ -176,7 +169,7 @@ jobs:
       - add_ssh_keys:
           fingerprints: ["3e:88:4f:e5:61:e5:ea:3f:48:d3:17:72:ab:a6:b4:51"]
       - attach_workspace:
-          at: .
+          at: .circleci/ansible/
       - run:
           name: Install required dependencies
           command: |
@@ -192,9 +185,8 @@ jobs:
           name: Configure server
           command: |
             cd .circleci/ansible
-            ansible-playbook -i inventory configure-server.yml
-      - destroy-environment:
-          when: on_fail    
+            ansible-playbook -i inventory.txt configure-server.yml
+      - destroy-environment  
 
   run-migrations:
     docker:
@@ -216,27 +208,15 @@ jobs:
           command: |
             cd backend
             npm install
-            touch temp
-            npm run migrations > temp
-            cat temp
+            npm run migrations > migrations_dump.txt
       - run:
           name: Send migration results to kvdb.io
           command: |
-            cd backend
-            ls
-            cat temp
-            if grep -q "No migrations are pending" temp
+            if grep -q "has been executed successfully." ~/project/backend/migrations_dump.txt
             then
-              echo "stash success status to kvdb.io"
-              echo "https://kvdb.io/LfPvq84nr8JM8BDkq3oaWN/migration_${CIRCLE_WORKFLOW_ID:0:7}"
-              curl -k -d '1' https://kvdb.io/LfPvq84nr8JM8BDkq3oaWN/migration_${CIRCLE_WORKFLOW_ID:0:7}
-            else
-              echo "stash fail status to kvdb.io"
-              echo "https://kvdb.io/LfPvq84nr8JM8BDkq3oaWN/migration_${CIRCLE_WORKFLOW_ID:0:7}"
-              curl -k -d '0' https://kvdb.io/LfPvq84nr8JM8BDkq3oaWN/migration_${CIRCLE_WORKFLOW_ID:0:7}
+              curl https://kvdb.io/LfPvq84nr8JM8BDkq3oaWN/migration_${CIRCLE_WORKFLOW_ID:0:7}  -d '1'
             fi
-      - destroy-environment:
-          when: on_fail    
+      - destroy-environment  
 
   deploy-frontend:
     docker:
@@ -256,26 +236,22 @@ jobs:
       - run:
           name: Get backend url
           command: |
-            cd frontend
-            export BACKEND_IP=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" --output text)
+            BACKEND_IP=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" --output text)
             export API_URL="http://${BACKEND_IP}:3030"
             echo "${API_URL}"
-            echo API_URL="http://${BACKEND_IP}:3030" >> .env
-            cat .env
+            echo API_URL="http://${BACKEND_IP}:3030" >> frontend/.env
+            cat frontend/.env
       - run:
           name: Deploy frontend objects
           command: |
             cd frontend
-            pwd
             npm install
             npm run build
             tar -czvf artifact-"${CIRCLE_WORKFLOW_ID:0:7}".tar.gz dist
             aws s3 cp dist s3://udapeople-${CIRCLE_WORKFLOW_ID:0:7} --recursive
-      - destroy-environment:
-          when: on_fail
+      - destroy-environment
       - revert-migrations:
           id: ${CIRCLE_WORKFLOW_ID:0:7}
-          when: on_fail
 
   deploy-backend:
     docker:
@@ -285,7 +261,7 @@ jobs:
       - add_ssh_keys:
           fingerprints: ["3e:88:4f:e5:61:e5:ea:3f:48:d3:17:72:ab:a6:b4:51"]
       - attach_workspace:
-          at: .
+          at: .circleci/ansible/
       - run:
           name: Install dependencies
           command: |
@@ -304,13 +280,11 @@ jobs:
             tar -C backend -czvf artifact.tar.gz .
             cd .circleci/ansible
             echo "Contents  of the inventory file is -------"
-            cat inventory
-            ansible-playbook -i inventory deploy-backend.yml
-      - destroy-environment:
-          when: on_fail
+            cat inventory.txt
+            ansible-playbook -i inventory.txt deploy-backend.yml
+      - destroy-environment
       - revert-migrations:
           id: ${CIRCLE_WORKFLOW_ID:0:7}
-          when: on_fail  
 
   smoke-test:
     docker:
@@ -318,7 +292,7 @@ jobs:
     steps:
       - checkout
       - attach_workspace:
-          at: .
+          at: .circleci/ansible/
       - run:
           name: Install dependencies
           command: |
@@ -329,13 +303,13 @@ jobs:
       - run:
           name: Get backend url
           command: |
-            export BACKEND_IP=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" --output text)
+            BACKEND_IP=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" --output text)
             export API_URL="http://${BACKEND_IP}:3030"
             echo "${API_URL}"
       - run:
           name: Backend smoke test.
           command: |
-            export BACKEND_IP=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" --output text)
+            BACKEND_IP=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --filters "Name=tag:project,Values=udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" --output text)
             export API_URL="http://${BACKEND_IP}:3030"
             echo "${API_URL}"
             if curl "${API_URL}/api/status" | grep "ok"
@@ -355,11 +329,9 @@ jobs:
             else
               return 1
             fi
-      - destroy-environment:
-          when: on_fail
+      - destroy-environment
       - revert-migrations:
           id: ${CIRCLE_WORKFLOW_ID:0:7}
-          when: on_fail
 
   cloudfront-update:
     docker:
@@ -371,7 +343,7 @@ jobs:
           command: |
             yum -y install tar gzip awscli curl npm nodejs
       - attach_workspace:
-          at: .
+          at: .circleci/ansible/
       - run:
           name: stash current workflow id
           command: |
@@ -391,15 +363,9 @@ jobs:
               --tags project=udapeople
             echo OldWorkflowID: ${OldWorkflowID}
             echo Current work flow ID: ${CIRCLE_WORKFLOW_ID:0:7}
-      - persist_to_workspace:
-          root: .
-          paths:
-            - ./oldId
-      - destroy-environment:
-          when: on_fail
+      - destroy-environment
       - revert-migrations:
           id: ${CIRCLE_WORKFLOW_ID:0:7}
-          when: on_fail
 
 # cleanup:
 #     docker:
