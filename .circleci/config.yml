@@ -218,7 +218,9 @@ jobs:
             then
               curl -k -d '1' https://kvdb.io/LfPvq84nr8JM8BDkq3oaWN/migration_${CIRCLE_WORKFLOW_ID:0:7}
             fi
-      - destroy-environment  
+      - destroy-environment
+      - revert-migrations:
+          id: ${CIRCLE_WORKFLOW_ID:0:7}
 
   deploy-frontend:
     docker:
@@ -321,7 +323,7 @@ jobs:
             echo ${URL} 
             if curl -s ${URL} | grep "Welcome"
             then
-              return 0
+              return 1
             else
               return 1
             fi
