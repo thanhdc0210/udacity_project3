@@ -341,7 +341,7 @@ jobs:
           command: |
             yum -y install tar gzip awscli curl npm nodejs
       - attach_workspace:
-          at: .circleci/ansible/
+          at: .
       - run:
           name: stash current workflow id
           command: |
